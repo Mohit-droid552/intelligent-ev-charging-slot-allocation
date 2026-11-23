@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intelligent EV Charging Slot Allocation System</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .animate-pulse-subtle {
+      animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-slate-950 font-black text-xl">
+          ⚡
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            Intelligent EV Slot Allocation System
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              Prototype v1.0
+            </span>
+          </h1>
+          <p class="text-xs text-slate-400">Scheduling Core: FCFS • SJF • Hybrid Priority | Non-Preemptive</p>
+        </div>
+      </div>
+
+      <!-- Live Simulation Clock & Controls -->
+      <div class="flex items-center gap-2.5 bg-slate-950/70 border border-slate-800 rounded-xl p-1.5 px-3">
+        <div class="text-right">
+          <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Simulation Clock</div>
+          <div id="clockDisplay" class="font-mono text-sm font-bold text-emerald-400">00h 00m (0.0 min)</div>
+        </div>
+        <div class="h-7 w-[1px] bg-slate-800 mx-1"></div>
+        <button onclick="advanceTime(5)" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition border border-slate-700">
+          +5m
+        </button>
+        <button onclick="advanceTime(15)" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition border border-slate-700">
+          +15m
+        </button>
+        <button onclick="advanceTime(60)" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition border border-slate-700">
+          +1h
+        </button>
+        <button id="autoPlayBtn" onclick="toggleAutoPlay()" class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1">
+          <span id="playIcon">▶</span> <span id="playText">Play</span>
+        </button>
+        <button onclick="resetStation()" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-300 transition border border-red-800/50" title="Reset Simulation">
+          ↺
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Algorithm Selector Bar -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Scheduling Algorithm:</span>
+          <div class="text-sm text-slate-300 mt-0.5" id="algoExplanation">
+            <span class="font-semibold text-emerald-400">Hybrid Priority:</span> Balances wait time, charge duration & urgency to eliminate starvation while maintaining high throughput.
+          </div>
+        </div>
+
+        <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 self-start md:self-auto">
+          <button id="btnFCFS" onclick="switchAlgorithm('FCFS')" class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white">
+            <span>FCFS</span>
+            <span class="text-[10px] opacity-60 font-normal">Baseline</span>
+          </button>
+          <button id="btnSJF" onclick="switchAlgorithm('SJF')" class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white">
+            <span>SJF</span>
+            <span class="text-[10px] opacity-60 font-normal">Shortest First</span>
+          </button>
+          <button id="btnHYBRID" onclick="switchAlgorithm('HYBRID')" class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-emerald-600 text-white shadow-md shadow-emerald-900/40">
+            <span>★ Hybrid Priority</span>
+            <span class="text-[10px] opacity-80 font-normal">Proposed</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Metrics Cards -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+        <div class="text-xs font-medium text-slate-400">Available Slots</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="statAvailableSlots" class="text-3xl font-extrabold text-white">4</span>
+          <span class="text-xs text-slate-500">/ 4 Docks</span>
+        </div>
+        <div class="mt-1 text-[11px] text-emerald-400">Fast Chargers (50 kW)</div>
+      </div>
+
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+        <div class="text-xs font-medium text-slate-400">Queue Length</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="statQueueCount" class="text-3xl font-extrabold text-white">0</span>
+          <span class="text-xs text-slate-500">vehicles</span>
+        </div>
+        <div class="mt-1 text-[11px] text-amber-400" id="queueStatus">No waiting vehicles</div>
+      </div>
+
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+        <div class="text-xs font-medium text-slate-400">Average Wait Time</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="statAvgWait" class="text-3xl font-extrabold text-white">0.0</span>
+          <span class="text-xs text-slate-500">minutes</span>
+        </div>
+        <div class="mt-1 text-[11px] text-slate-400">Observed across completed</div>
+      </div>
+
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+        <div class="text-xs font-medium text-slate-400">Vehicles Served</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="statTotalServed" class="text-3xl font-extrabold text-white">0</span>
+          <span class="text-xs text-slate-500">completed</span>
+        </div>
+        <div class="mt-1 text-[11px] text-emerald-400" id="statThroughput">0.0 v/hr</div>
+      </div>
+    </section>
+
+    <!-- 4 Charging Dock Slots (Bay Grid) -->
+    <section>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Charging Docks (Identical 50 kW Bays)
+        </h2>
+        <span class="text-xs text-slate-400">Synchronous non-preemptive slot allocation</span>
+      </div>
+
+      <div id="slotsContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Rendered dynamically via JavaScript -->
+      </div>
+    </section>
+
+    <!-- Main Workspace: Request Form & Live Queue -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column (5 cols): Request Form & Rush Hour Injector -->
+      <div class="lg:col-span-5 space-y-6">
+
+        <!-- Vehicle Request Form -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-white">Request Charging Slot</h3>
+              <p class="text-xs text-slate-400">Submit an incoming EV charging request</p>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Driver Portal</span>
+          </div>
+
+          <form id="requestForm" onsubmit="handleRequestSubmit(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Vehicle License / ID</label>
+              <input type="text" id="reqVehicleId" placeholder="e.g. EV-108" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Battery Size</label>
+                <select id="reqBatteryCap" onchange="calculateDurationEstimate()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+                  <option value="40">40 kWh (Compact)</option>
+                  <option value="60" selected>60 kWh (Standard)</option>
+                  <option value="75">75 kWh (Long Range)</option>
+                  <option value="100">100 kWh (SUV / Fleet)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Charger Rating</label>
+                <div class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-400 font-mono">
+                  50.0 kW (DC Fast)
+                </div>
+              </div>
+            </div>
+
+            <!-- SoC Sliders -->
+            <div class="space-y-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+              <div>
+                <div class="flex justify-between text-xs text-slate-300 mb-1">
+                  <span>Current Battery Level (SoC):</span>
+                  <span id="currentSocLabel" class="font-bold text-amber-400">20%</span>
+                </div>
+                <input type="range" id="reqCurrentSoc" min="5" max="80" value="20" step="5" oninput="updateSocSliders(); calculateDurationEstimate();" class="w-full accent-amber-500">
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs text-slate-300 mb-1">
+                  <span>Target Battery Level (SoC):</span>
+                  <span id="targetSocLabel" class="font-bold text-emerald-400">80%</span>
+                </div>
+                <input type="range" id="reqTargetSoc" min="30" max="100" value="80" step="5" oninput="updateSocSliders(); calculateDurationEstimate();" class="w-full accent-emerald-500">
+              </div>
+
+              <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                <span class="text-slate-400">Est. Energy Needed:</span>
+                <span id="energyNeededEstimate" class="font-mono font-bold text-white">36.0 kWh</span>
+              </div>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-slate-400">Est. Charging Time:</span>
+                <span id="chargingTimeEstimate" class="font-mono font-bold text-emerald-400 text-sm">43.2 min</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Priority / Urgency Class</label>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="cursor-pointer border border-slate-800 rounded-xl p-2.5 text-center text-xs hover:border-slate-700 bg-slate-950 flex flex-col items-center">
+                  <input type="radio" name="reqPriority" value="1" checked class="hidden peer">
+                  <span class="peer-checked:font-bold peer-checked:text-emerald-400">Normal</span>
+                  <span class="text-[10px] text-slate-500">Tier 1</span>
+                </label>
+                <label class="cursor-pointer border border-slate-800 rounded-xl p-2.5 text-center text-xs hover:border-slate-700 bg-slate-950 flex flex-col items-center">
+                  <input type="radio" name="reqPriority" value="2" class="hidden peer">
+                  <span class="peer-checked:font-bold peer-checked:text-blue-400">High</span>
+                  <span class="text-[10px] text-slate-500">Tier 2</span>
+                </label>
+                <label class="cursor-pointer border border-slate-800 rounded-xl p-2.5 text-center text-xs hover:border-slate-700 bg-slate-950 flex flex-col items-center">
+                  <input type="radio" name="reqPriority" value="3" class="hidden peer">
+                  <span class="peer-checked:font-bold peer-checked:text-red-400">Urgent</span>
+                  <span class="text-[10px] text-slate-500">Emergency</span>
+                </label>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-sm shadow-lg shadow-emerald-900/30 transition">
+              Submit Request to Station
+            </button>
+          </form>
+        </div>
+
+        <!-- Quick Rush Hour Demand Injector -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white">Demand Pattern Injector</h3>
+            <span class="text-xs text-slate-500">Rush Hour Simulation</span>
+          </div>
+          <p class="text-xs text-slate-400">Simulate incoming waves of EVs based on synthetic rush-hour arrival distributions.</p>
+
+          <div class="grid grid-cols-2 gap-2.5 pt-1">
+            <button onclick="injectRushHour('morning', 5)" class="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition">
+              <div class="text-xs font-bold text-amber-300">🌅 Morning Rush</div>
+              <div class="text-[10px] text-slate-400">Add 5 commuter EVs</div>
+            </button>
+            <button onclick="injectRushHour('evening', 6)" class="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition">
+              <div class="text-xs font-bold text-orange-400">🌆 Evening Peak</div>
+              <div class="text-[10px] text-slate-400">Add 6 varied duration EVs</div>
+            </button>
+            <button onclick="injectRushHour('emergency', 1)" class="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition col-span-2">
+              <div class="text-xs font-bold text-red-400">🚨 Emergency / Medical EV</div>
+              <div class="text-[10px] text-slate-400">Test high priority pre-emption / queue jump</div>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column (7 cols): Live Scheduling Queue Table & Details -->
+      <div class="lg:col-span-7 space-y-6">
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                Live Scheduling Core Queue
+                <span id="queueBadge" class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">0 pending</span>
+              </h3>
+              <p class="text-xs text-slate-400">Ordered by <span id="queueAlgoLabel" class="font-semibold text-emerald-400">Hybrid Priority Score</span> via binary min-heap</p>
+            </div>
+            <button onclick="refreshData()" class="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+              Refresh
+            </button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="text-slate-400 border-b border-slate-800 uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th class="py-2.5 px-3">Rank</th>
+                  <th class="py-2.5 px-3">Vehicle</th>
+                  <th class="py-2.5 px-3">Arrival</th>
+                  <th class="py-2.5 px-3">Wait Time</th>
+                  <th class="py-2.5 px-3">Charge Time</th>
+                  <th class="py-2.5 px-3">Priority</th>
+                  <th class="py-2.5 px-3 text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody id="queueTableBody" class="divide-y divide-slate-800/60 font-mono">
+                <!-- Dynamically filled -->
+                <tr>
+                  <td colspan="7" class="py-8 text-center text-slate-500 font-sans text-xs">
+                    Queue is currently empty. Submit a vehicle or inject rush-hour demand.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Completed Sessions Summary -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-white">Recent Completed Sessions</h3>
+              <p class="text-xs text-slate-400">Logged session history and waiting times</p>
+            </div>
+            <span class="text-xs text-slate-500 font-mono" id="completedCountLabel">0 recorded</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="text-slate-400 border-b border-slate-800 uppercase tracking-wider text-[10px] font-sans">
+                <tr>
+                  <th class="py-2 px-3">Vehicle</th>
+                  <th class="py-2 px-3">Arrival</th>
+                  <th class="py-2 px-3">Started</th>
+                  <th class="py-2 px-3">Wait Time</th>
+                  <th class="py-2 px-3">Energy</th>
+                  <th class="py-2 px-3">Algorithm</th>
+                </tr>
+              </thead>
+              <tbody id="completedTableBody" class="divide-y divide-slate-800/60">
+                <tr>
+                  <td colspan="6" class="py-4 text-center text-slate-500 font-sans text-xs">
+                    No completed sessions yet.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Comparative Analysis & Analytics Benchmark Section (Chapter 7) -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            📊 Comparative Analysis & Benchmark Dashboard
+            <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">
+              Chapter 7 Verification
+            </span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            Simulate 42 synthetic vehicles across 16 rush-hour hours to compare FCFS, SJF, and Hybrid Priority on identical arrival streams.
+          </p>
+        </div>
+
+        <button onclick="runBenchmarkSimulation()" id="benchmarkBtn" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-900/40 transition flex items-center gap-2 self-start md:self-auto">
+          <span>🚀 Run Full 3-Way Benchmark</span>
+        </button>
+      </div>
+
+      <!-- Comparative Summary Table (Table 7.2) -->
+      <div class="overflow-x-auto bg-slate-950 rounded-xl border border-slate-800">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900/80 text-slate-300 font-semibold border-b border-slate-800 text-[11px]">
+            <tr>
+              <th class="py-3 px-4">Performance Metric</th>
+              <th class="py-3 px-4 text-blue-400">FCFS (Baseline)</th>
+              <th class="py-3 px-4 text-amber-400">SJF</th>
+              <th class="py-3 px-4 text-emerald-400">Hybrid Priority</th>
+              <th class="py-3 px-4 text-slate-400">Evaluation Insight</th>
+            </tr>
+          </thead>
+          <tbody id="benchmarkTableBody" class="divide-y divide-slate-800 font-mono">
+            <tr>
+              <td colspan="5" class="py-6 text-center text-slate-500 font-sans">
+                Click "Run Full 3-Way Benchmark" to execute the simulation across all three algorithms.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Comparative Graphs (Chart.js visualizers) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+        <!-- Chart 1: Average & Max Wait -->
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <h4 class="text-xs font-bold text-slate-200 mb-3 flex items-center justify-between">
+            <span>Average Waiting Time (min) - Fig 7.1</span>
+            <span class="text-[10px] text-slate-500">Lower is better</span>
+          </h4>
+          <div class="h-56 relative">
+            <canvas id="chartAvgWait"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Short vs Long Sessions (Starvation Risk) -->
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <h4 class="text-xs font-bold text-slate-200 mb-3 flex items-center justify-between">
+            <span>Short vs Long Sessions Wait (min) - Fig 7.3</span>
+            <span class="text-[10px] text-slate-500">Starvation analysis</span>
+          </h4>
+          <div class="h-56 relative">
+            <canvas id="chartShortVsLong"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 3: Fairness (Spread / Std Dev) & Max Wait -->
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <h4 class="text-xs font-bold text-slate-200 mb-3 flex items-center justify-between">
+            <span>Maximum Wait & Fairness Spread (min) - Fig 7.4</span>
+            <span class="text-[10px] text-slate-500">Evenness of service</span>
+          </h4>
+          <div class="h-56 relative">
+            <canvas id="chartFairness"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 4: Slot Utilization & Throughput -->
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <h4 class="text-xs font-bold text-slate-200 mb-3 flex items-center justify-between">
+            <span>Slot Utilization (%) & Throughput - Fig 7.5</span>
+            <span class="text-[10px] text-slate-500">Resource efficiency</span>
+          </h4>
+          <div class="h-56 relative">
+            <canvas id="chartUtilization"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generated Matplotlib Figures Showcase -->
+      <div id="matplotlibPlotsContainer" class="hidden pt-4 border-t border-slate-800 space-y-4">
+        <h4 class="text-sm font-bold text-white flex items-center gap-2">
+          <span>📈 Matplotlib Publication Figures</span>
+          <span class="text-xs text-slate-400 font-normal">(Generated via Python Pandas & Matplotlib)</span>
+        </h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="plotsGrid">
+          <!-- Injected via JS -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+    Intelligent EV Charging Slot Allocation System • Python heapq Scheduling Engine • REST Framework Architecture
+  </footer>
+
+  <!-- Application Logic -->
+  <script>
+    let currentConfig = null;
+    let autoPlayInterval = null;
+    let isAutoPlaying = false;
+    let charts = {};
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      calculateDurationEstimate();
+      refreshData();
+      // Start background polling every 3 seconds (Section 6.6)
+      setInterval(pollUpdates, 3000);
+    });
+
+    // Format minutes into hh:mm string
+    function formatTime(minutes) {
+      const h = Math.floor(minutes / 60);
+      const m = Math.floor(minutes % 60);
+      return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m (${minutes.toFixed(1)} min)`;
+    }
+
+    // Live duration calculation on request form
+    function calculateDurationEstimate() {
+      const cap = parseFloat(document.getElementById('reqBatteryCap').value) || 60;
+      const curr = parseFloat(document.getElementById('reqCurrentSoc').value) || 20;
+      const targ = parseFloat(document.getElementById('reqTargetSoc').value) || 80;
+      const power = 50.0;
+
+      const socDelta = Math.max(0, targ - curr) / 100.0;
+      const energyNeeded = (cap * socDelta).toFixed(1);
+      const duration = ((energyNeeded / power) * 60.0).toFixed(1);
+
+      document.getElementById('energyNeededEstimate').innerText = `${energyNeeded} kWh`;
+      document.getElementById('chargingTimeEstimate').innerText = `${duration} min`;
+    }
+
+    function updateSocSliders() {
+      const curr = parseInt(document.getElementById('reqCurrentSoc').value);
+      const targ = parseInt(document.getElementById('reqTargetSoc').value);
+
+      if (curr >= targ) {
+        document.getElementById('reqTargetSoc').value = Math.min(100, curr + 10);
+      }
+      document.getElementById('currentSocLabel').innerText = `${document.getElementById('reqCurrentSoc').value}%`;
+      document.getElementById('targetSocLabel').innerText = `${document.getElementById('reqTargetSoc').value}%`;
+    }
+
+    // Fetch live state from backend
+    async function refreshData() {
+      try {
+        const res = await fetch('/api/status/');
+        const data = await res.json();
+        renderStation(data);
+      } catch (err) {
+        console.error('Error refreshing station:', err);
+      }
+    }
+
+    async function pollUpdates() {
+      // Lightweight polling as described in report Section 6.6
+      if (document.visibilityState === 'visible') {
+        await refreshData();
+      }
+    }
+
+    function renderStation(data) {
+      currentConfig = data.config;
+
+      // Clock
+      document.getElementById('clockDisplay').innerText = formatTime(data.config.sim_time_minutes);
+
+      // Top metrics
+      document.getElementById('statAvailableSlots').innerText = data.metrics.available_slots;
+      document.getElementById('statQueueCount').innerText = data.queue_count;
+      document.getElementById('statAvgWait').innerText = data.metrics.avg_wait_time_minutes.toFixed(1);
+      document.getElementById('statTotalServed').innerText = data.metrics.total_completed;
+
+      const hours = Math.max(0.1, data.config.sim_time_minutes / 60.0);
+      const throughput = (data.metrics.total_completed / hours).toFixed(2);
+      document.getElementById('statThroughput').innerText = `${throughput} v/hr`;
+
+      if (data.queue_count > 0) {
+        document.getElementById('queueStatus').innerText = `${data.queue_count} in queue`;
+      } else {
+        document.getElementById('queueStatus').innerText = 'No waiting vehicles';
+      }
+
+      // Active Algorithm styling
+      updateAlgoUI(data.config.active_algorithm);
+
+      // Render 4 Slots
+      renderSlots(data.slots);
+
+      // Render Queue
+      renderQueue(data.queue);
+
+      // Render Completed
+      renderCompleted(data.recent_completed);
+    }
+
+    function updateAlgoUI(algo) {
+      const btnFCFS = document.getElementById('btnFCFS');
+      const btnSJF = document.getElementById('btnSJF');
+      const btnHYBRID = document.getElementById('btnHYBRID');
+      const expl = document.getElementById('algoExplanation');
+      const queueAlgoLabel = document.getElementById('queueAlgoLabel');
+
+      [btnFCFS, btnSJF, btnHYBRID].forEach(b => {
+        b.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white';
+      });
+
+      if (algo === 'FCFS') {
+        btnFCFS.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-blue-600 text-white shadow-md shadow-blue-900/40';
+        expl.innerHTML = '<span class="font-semibold text-blue-400">FCFS (Baseline):</span> Vehicles served strictly in order of arrival. Simple and fair, but prone to convoy delay behind long sessions.';
+        queueAlgoLabel.innerText = 'Arrival Time (FCFS order)';
+      } else if (algo === 'SJF') {
+        btnSJF.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-amber-600 text-white shadow-md shadow-amber-900/40';
+        expl.innerHTML = '<span class="font-semibold text-amber-400">Shortest Job First (SJF):</span> Shortest charge duration served first. Minimizes average wait time, but risks starving long charging sessions.';
+        queueAlgoLabel.innerText = 'Estimated Charge Time (SJF order)';
+      } else {
+        btnHYBRID.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-emerald-600 text-white shadow-md shadow-emerald-900/40';
+        expl.innerHTML = '<span class="font-semibold text-emerald-400">Hybrid Priority:</span> Dynamic score balances wait time, charge duration & urgency. Prevents starvation while keeping wait times low.';
+        queueAlgoLabel.innerText = 'Hybrid Priority Score (Composite heapq key)';
+      }
+    }
+
+    function renderSlots(slots) {
+      const container = document.getElementById('slotsContainer');
+      container.innerHTML = '';
+
+      slots.forEach(slot => {
+        const isOccupied = slot.status === 'OCCUPIED';
+        const card = document.createElement('div');
+        card.className = `rounded-2xl p-4 border transition-all ${
+          isOccupied
+            ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-emerald-500/40 shadow-lg shadow-emerald-950/30'
+            : 'bg-slate-900/60 border-slate-800'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-mono font-bold text-slate-300">DOCK #0${slot.slot_number}</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+              isOccupied
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse-subtle'
+                : 'bg-slate-800 text-slate-400 border border-slate-700'
+            }">
+              ${isOccupied ? '⚡ Charging' : '○ Available'}
+            </span>
+          </div>
+
+          <div class="min-h-[90px] flex flex-col justify-center">
+            ${isOccupied ? `
+              <div class="flex items-baseline justify-between mb-1">
+                <span class="text-sm font-bold font-mono text-white">${slot.current_vehicle_id}</span>
+                <span class="text-xs font-mono text-emerald-400 font-semibold">${slot.remaining_minutes}m left</span>
+              </div>
+              <div class="w-full bg-slate-950 rounded-full h-2 mb-2 overflow-hidden border border-slate-800">
+                <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full transition-all duration-500" style="width: ${slot.progress_pct}%"></div>
+              </div>
+              <div class="flex justify-between text-[10px] text-slate-400">
+                <span>Progress: ${slot.progress_pct}%</span>
+                <span>Power: 50 kW</span>
+              </div>
+            ` : `
+              <div class="text-center py-3 text-slate-500">
+                <div class="text-xl mb-1">🔌</div>
+                <div class="text-xs">Ready for Next EV</div>
+              </div>
+            `}
+          </div>
+
+          <div class="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+            <span>Delivered: ${slot.total_energy_delivered.toFixed(1)} kWh</span>
+            <span>Sessions: ${slot.total_sessions_completed}</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderQueue(queue) {
+      const tbody = document.getElementById('queueTableBody');
+      document.getElementById('queueBadge').innerText = `${queue.length} pending`;
+
+      if (!queue || queue.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-slate-500 font-sans text-xs">
+              Queue is currently empty. Submit a vehicle or inject rush-hour demand.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = queue.map((req, idx) => {
+        let priBadge = '<span class="text-slate-400">Normal</span>';
+        if (req.priority === 2) priBadge = '<span class="text-blue-400 font-bold">High (2)</span>';
+        if (req.priority === 3) priBadge = '<span class="text-red-400 font-bold animate-pulse">🚨 Urgent (3)</span>';
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-3">
+              <span class="w-5 h-5 inline-flex items-center justify-center rounded-full ${
+                idx === 0 ? 'bg-emerald-500/20 text-emerald-400 font-bold' : 'text-slate-400'
+              }">#${idx + 1}</span>
+            </td>
+            <td class="py-2.5 px-3 font-bold text-white">${req.vehicle_id}</td>
+            <td class="py-2.5 px-3 text-slate-400">${req.arrival_time.toFixed(1)}m</td>
+            <td class="py-2.5 px-3 text-amber-300 font-semibold">${req.current_wait_time.toFixed(1)}m</td>
+            <td class="py-2.5 px-3 text-emerald-400">${req.charging_time_minutes.toFixed(1)}m</td>
+            <td class="py-2.5 px-3 font-sans">${priBadge}</td>
+            <td class="py-2.5 px-3 text-right font-bold text-indigo-400">${req.computed_score !== undefined ? req.computed_score : '-'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderCompleted(completed) {
+      const tbody = document.getElementById('completedTableBody');
+      document.getElementById('completedCountLabel').innerText = `${completed.length} shown`;
+
+      if (!completed || completed.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-4 text-center text-slate-500 font-sans text-xs">
+              No completed sessions yet.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = completed.map(req => `
+        <tr class="hover:bg-slate-800/30 transition text-slate-300">
+          <td class="py-2 px-3 font-bold text-white">${req.vehicle_id}</td>
+          <td class="py-2 px-3">${req.arrival_time.toFixed(1)}m</td>
+          <td class="py-2 px-3">${req.start_time ? req.start_time.toFixed(1) + 'm' : '-'}</td>
+          <td class="py-2 px-3 font-semibold text-amber-300">${req.wait_time_minutes ? req.wait_time_minutes.toFixed(1) + 'm' : '0.0m'}</td>
+          <td class="py-2 px-3 text-emerald-400">${req.energy_needed_kwh.toFixed(1)} kWh</td>
+          <td class="py-2 px-3 text-xs font-sans text-slate-400">${req.algorithm_used}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Actions
+    async function advanceTime(delta) {
+      try {
+        const res = await fetch('/api/tick/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delta_minutes: delta })
+        });
+        await refreshData();
+      } catch (err) {
+        console.error('Error advancing time:', err);
+      }
+    }
+
+    function toggleAutoPlay() {
+      const btn = document.getElementById('autoPlayBtn');
+      const icon = document.getElementById('playIcon');
+      const text = document.getElementById('playText');
+
+      if (isAutoPlaying) {
+        clearInterval(autoPlayInterval);
+        isAutoPlaying = false;
+        icon.innerText = '▶';
+        text.innerText = 'Play';
+        btn.className = 'px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1';
+      } else {
+        isAutoPlaying = true;
+        icon.innerText = '⏸';
+        text.innerText = 'Pause';
+        btn.className = 'px-3 py-1 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition flex items-center gap-1';
+        autoPlayInterval = setInterval(() => {
+          advanceTime(5);
+        }, 1500);
+      }
+    }
+
+    async function switchAlgorithm(algo) {
+      try {
+        const res = await fetch('/api/algorithm/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ algorithm: algo })
+        });
+        await refreshData();
+      } catch (err) {
+        console.error('Error switching algorithm:', err);
+      }
+    }
+
+    async function handleRequestSubmit(e) {
+      e.preventDefault();
+      const vid = document.getElementById('reqVehicleId').value.trim();
+      const cap = parseFloat(document.getElementById('reqBatteryCap').value);
+      const curr = parseFloat(document.getElementById('reqCurrentSoc').value);
+      const targ = parseFloat(document.getElementById('reqTargetSoc').value);
+      const pri = parseInt(document.querySelector('input[name="reqPriority"]:checked').value);
+
+      try {
+        const res = await fetch('/api/requests/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vehicle_id: vid || undefined,
+            battery_capacity_kwh: cap,
+            current_soc_pct: curr,
+            target_soc_pct: targ,
+            charger_power_kw: 50.0,
+            priority: pri
+          })
+        });
+        if (res.ok) {
+          document.getElementById('reqVehicleId').value = '';
+          await refreshData();
+        }
+      } catch (err) {
+        console.error('Error submitting request:', err);
+      }
+    }
+
+    async function injectRushHour(type, count) {
+      try {
+        await fetch('/api/rush-hour/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batch_type: type, count: count })
+        });
+        await refreshData();
+      } catch (err) {
+        console.error('Error injecting rush hour:', err);
+      }
+    }
+
+    async function resetStation() {
+      if (confirm('Reset simulation clock to 0 and clear queue?')) {
+        try {
+          if (isAutoPlaying) toggleAutoPlay();
+          await fetch('/api/reset/', { method: 'POST' });
+          await refreshData();
+        } catch (err) {
+          console.error('Error resetting station:', err);
+        }
+      }
+    }
+
+    // Benchmark & Comparative Charts (Chapter 7)
+    async function runBenchmarkSimulation() {
+      const btn = document.getElementById('benchmarkBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="animate-spin">⏳</span> Running 3-Way Benchmark...';
+
+      try {
+        const res = await fetch('/api/simulate/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ num_vehicles: 42, duration_hours: 16.0 })
+        });
+        const data = await res.json();
+        renderBenchmarkResults(data);
+      } catch (err) {
+        console.error('Error running benchmark:', err);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀 Run Full 3-Way Benchmark</span>';
+      }
+    }
+
+    function renderBenchmarkResults(data) {
+      const tbody = document.getElementById('benchmarkTableBody');
+      tbody.innerHTML = data.summary_table.map(row => `
+        <tr class="hover:bg-slate-900/60 transition">
+          <td class="py-2.5 px-4 font-sans font-medium text-slate-200">${row.metric}</td>
+          <td class="py-2.5 px-4 text-blue-400 font-bold">${row.FCFS !== undefined ? row.FCFS : '-'}</td>
+          <td class="py-2.5 px-4 text-amber-400 font-bold">${row.SJF !== undefined ? row.SJF : '-'}</td>
+          <td class="py-2.5 px-4 text-emerald-400 font-bold">${row.HYBRID !== undefined ? row.HYBRID : '-'}</td>
+          <td class="py-2.5 px-4 text-slate-400 font-sans text-[11px]">${row.best}</td>
+        </tr>
+      `).join('');
+
+      // Render Charts with Chart.js
+      renderCharts(data.algorithms);
+
+      // Render Matplotlib publication plots if available
+      if (data.plots) {
+        const container = document.getElementById('matplotlibPlotsContainer');
+        const grid = document.getElementById('plotsGrid');
+        container.classList.remove('hidden');
+        grid.innerHTML = '';
+
+        const titles = {
+          'fig7_1_avg_wait': 'Fig 7.1: Average Waiting Time',
+          'fig7_2_distribution': 'Fig 7.2: Distribution of Wait Times',
+          'fig7_3_short_vs_long': 'Fig 7.3: Short vs Long Sessions',
+          'fig7_4_max_wait_fairness': 'Fig 7.4: Max Wait & Fairness',
+          'fig7_5_utilization_throughput': 'Fig 7.5: Utilization & Throughput',
+        };
+
+        for (const [key, b64] of Object.entries(data.plots)) {
+          const card = document.createElement('div');
+          card.className = 'bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col justify-between';
+          card.innerHTML = `
+            <div class="text-xs font-bold text-slate-300 mb-2">${titles[key] || key}</div>
+            <img src="data:image/png;base64,${b64}" alt="${key}" class="rounded-lg w-full border border-slate-800">
+          `;
+          grid.appendChild(card);
+        }
+      }
+    }
+
+    function renderCharts(algos) {
+      // 1. Chart: Average Wait
+      renderBarChart('chartAvgWait', ['FCFS', 'SJF', 'Hybrid'], [
+        algos.FCFS.mean_wait_time,
+        algos.SJF.mean_wait_time,
+        algos.HYBRID.mean_wait_time
+      ], ['#3b82f6', '#f97316', '#10b981'], 'Average Wait (minutes)');
+
+      // 2. Chart: Short vs Long
+      renderGroupedBarChart('chartShortVsLong', ['Short (<=40m)', 'Long (>=90m)'], [
+        { label: 'FCFS', data: [algos.FCFS.short_sessions_avg_wait, algos.FCFS.long_sessions_avg_wait], backgroundColor: '#3b82f6' },
+        { label: 'SJF', data: [algos.SJF.short_sessions_avg_wait, algos.SJF.long_sessions_avg_wait], backgroundColor: '#f97316' },
+        { label: 'Hybrid', data: [algos.HYBRID.short_sessions_avg_wait, algos.HYBRID.long_sessions_avg_wait], backgroundColor: '#10b981' }
+      ]);
+
+      // 3. Chart: Fairness (Std Dev) & Max Wait
+      renderGroupedBarChart('chartFairness', ['FCFS', 'SJF', 'Hybrid'], [
+        { label: 'Max Wait (m)', data: [algos.FCFS.max_wait_time, algos.SJF.max_wait_time, algos.HYBRID.max_wait_time], backgroundColor: '#818cf8' },
+        { label: 'Fairness StdDev (m)', data: [algos.FCFS.fairness_std_dev, algos.SJF.fairness_std_dev, algos.HYBRID.fairness_std_dev], backgroundColor: '#f43f5e' }
+      ]);
+
+      // 4. Chart: Slot Utilization
+      renderBarChart('chartUtilization', ['FCFS', 'SJF', 'Hybrid'], [
+        algos.FCFS.slot_utilization_pct,
+        algos.SJF.slot_utilization_pct,
+        algos.HYBRID.slot_utilization_pct
+      ], ['#3b82f6', '#f97316', '#10b981'], 'Slot Utilization (%)');
+    }
+
+    function renderBarChart(canvasId, labels, data, colors, label) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      charts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: label,
+            data: data,
+            backgroundColor: colors,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
+            x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+          }
+        }
+      });
+    }
+
+    function renderGroupedBarChart(canvasId, labels, datasets) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      charts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: datasets.map(d => ({ ...d, borderRadius: 4 }))
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8' } } },
+          scales: {
+            y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
+            x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
+
